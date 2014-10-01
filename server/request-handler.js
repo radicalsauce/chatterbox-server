@@ -1,81 +1,82 @@
 var parseUrl = require('url').parse;
+var fs = require('fs');
 
+var readFileSync = function(){
+  return JSON.parse(fs.readFileSync('messages'));
+};
 var idCounter = 0;
-var messageStore = [
-  {
-    id: idCounter++,
-    username: 'Bob',
-    text: 'Hello world',
-    createdAt: '2014-09-29T22:35:20.481Z',
-    updatedAt: '2014-09-29T22:35:20.481Z'
-  }
-];
+var messageStore = readFileSync();
 
-var filterMessages = function(messages, filters) {
-  filters = JSON.parse(filters);
-  for (var prop in filters) {
-    if (filters[prop]['$gt']) {
-      if (filters[prop]['$gt']['__type'] && filters[prop]['$gt']['iso'])
-      messages = messages.filter(function(message){
-        if (Date(message.updatedAt)) {
-
-        }
-      })
+var writeFile = function(data){
+  fs.writeFile('messages', JSON.stringify(data), function(err){
+    if(err){
+      throw err;
     }
-  }
-  return messages;
-}
-
-var orderMessages = function(messages, order) {
-  var reverse = false;
-  if (order.charAt(0) === '-') {
-    reverse = true;
-    order.shift();
-  }
-  return messages.sort(function(a,b){
+    console.log("Saved!");
   });
-}
+};
 
-var getMessages = function(filters) {
+
+var getResultJSON = function(filters) {
+  var result = {};
   var messages = messageStore;
 
-  console.log(filters);
+  result.results = messages;
 
-  // if (filters.where) {
-  //   messages = filterMessages(messages, filters.where);
-  // }
+  return JSON.stringify(result);
+};
 
-  // if (filters.order) {
-  //   messages = orderMessages(messages, filters.order);
-  // }
-
-  return messages;
-}
+var postMessage = function(data){
+  var message = JSON.parse(data);
+  message.objectId = idCounter++;
+  message.createdAt = new Date().toISOString();
+  message.updatedAt = new Date().toISOString();
+  messageStore.push(message);
+  writeFile(messageStore);
+};
 
 var handleRequest = function(request, response) {
-  var pathParts = parseUrl(request.url).pathname.split('/');
-  var error = '';
-
+  var pathname = parseUrl(request.url).pathname.split('/').slice(1);
+  var body = '';
   var headers = defaultCorsHeaders;
-  headers['Content-Type'] = "text/json";
+  headers['Content-Type'] = "application/json";
 
-  // Reject the request if the URL is not the one we're looking for
-  if (pathParts[1] !== '1' || pathParts[2] !== 'classes' || pathParts[3] !== 'chatterbox') {
-    response.writeHead(404, headers);
-    return response.end();
-  }
+  request.on('data', function(data){
+    body += data;
+  });
 
-  if (request.method === 'GET') {
-    response.writeHead(200, headers);
-    response.end(JSON.stringify(getMessages(parseUrl(request.url, true).query)));
-  }
+  request.on('end', function(){
 
+    if (pathname[0] === 'log') {
+      response.writeHead(200, headers);
+      response.end(JSON.stringify({a: 1}));
+    }
+
+    if (pathname[0] === 'classes' && (pathname[1] === 'messages')) {
+      if (request.method === 'GET' || request.method === 'OPTIONS') {
+        response.writeHead(200, headers);
+        var res = getResultJSON();
+        response.end(res);
+      } else if (request.method === 'OPTIONS') {
+        response.writeHead(200, headers);
+        response.end();
+      } else if (request.method === 'POST') {
+        postMessage(body);
+        response.writeHead(201, headers);
+        response.end(JSON.stringify(null));
+      }
+    } else {
+      response.writeHead(404, headers);
+      response.end();
+    }
+
+  });
 };
 
 var defaultCorsHeaders = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "access-control-allow-headers": "content-type, accept",
+  "access-control-allow-headers": "X-Parse-REST-API-Key, X-Parse-Application-Id, content-type, accept",
   "access-control-max-age": 10 // Seconds.
 };
 
